@@ -1,0 +1,100 @@
+---
+title: "Logistic Regression Bird Baths"
+author: "Jeff Grayum"
+date: "9/8/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries.
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(scales)
+library(ggthemes)
+theme_set(theme_minimal())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+Loading datasets.
+```{r}
+tuesdata <- tidytuesdayR::tt_load('2021-08-31')
+
+bird_baths <- tuesdata$bird_baths
+```
+
+```{r}
+bird_baths %>%
+  view()
+
+bird_baths %>%
+  group_by(survey_year, bird_type) %>%
+  summarize(n = sum(bird_count)) %>%
+  view()
+
+bird_baths %>%
+  count(survey_year, bird_type, sort = TRUE)
+
+bird_baths %>%
+  count(survey_year)
+```
+
+```{r}
+bird_baths %>%
+  count(urban_rural, sort = TRUE)
+
+#Let's check the NA's.  
+bird_baths %>%
+  filter(is.na(bird_baths))
+#Yes, they are summary roles.
+
+#Let's make a vector of the 15 most common birds, via the summary rows.
+top_birds <- bird_baths %>%
+  filter(is.na(urban_rural)) %>%
+  arrange(-bird_count) %>%
+  slice_max(bird_count, n = 15) %>%
+  pull(bird_type)
+
+#Now looking at the data without the summary rows.
+bird_parsed <- bird_baths %>%
+  filter(!is.na(urban_rural),
+         bird_type %in% top_birds) %>%
+  group_by(urban_rural, bird_type) %>%
+  summarize(bird_count = mean(bird_count), .groups = "drop")
+
+bird_parsed %>%
+  ggplot(aes(bird_count, bird_type)) +
+  geom_point(aes(color = urban_rural), size = 3) +
+  geom_segment(
+    data = bird_parsed %>%
+      pivot_wider(names_from = urban_rural,
+                  values_from = bird_count),
+    aes(x = Rural, xend = Urban, y = bird_type, yend = bird_type),
+    alpha = 0.7, color = "gray70", size = 1.5
+  ) +
+  scale_x_continuous(labels = percent) +
+  labs(x = "Probability of seeing a bird",
+       y = "",
+       color = "") 
+  
+  
+bird_parsed %>%
+      pivot_wider(names_from = urban_rural,
+                  values_from = bird_count) %>%
+  view()
+
+bird_parsed %>%
+  ggplot(aes(bird_count, bird_type, color = urban_rural)) +
+  geom_point(size = 3) +
+   scale_x_continuous(labels = percent) +
+  labs(x = "Probability of seeing a bird",
+       y = "",
+       color = "") 
+  
+```
+
