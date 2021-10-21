@@ -13,11 +13,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Loading libraries.
 ```{r}
+
 library(tidyverse)
 library(tidytuesdayR)
 library(scales)
 library(ggthemes)
+library(tidymodels)
+library(recipes)
+library(parsnip)
+
 theme_set(theme_minimal())
+
 update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
 ```
 
@@ -48,10 +54,10 @@ bird_baths %>%
 bird_baths %>%
   count(urban_rural, sort = TRUE)
 
-#Let's check the NA's.  
+#Let's check the NA's. They appear to be summary rows.
 bird_baths %>%
   filter(is.na(bird_baths))
-#Yes, they are summary roles.
+#Yes, they are summary rows.
 
 #Let's make a vector of the 15 most common birds, via the summary rows.
 top_birds <- bird_baths %>%
@@ -60,22 +66,21 @@ top_birds <- bird_baths %>%
   slice_max(bird_count, n = 15) %>%
   pull(bird_type)
 
-#Now looking at the data without the summary rows.
+
+#Now looking at the data without the summary rows (removing NA's).
 bird_parsed <- bird_baths %>%
   filter(!is.na(urban_rural),
          bird_type %in% top_birds) %>%
   group_by(urban_rural, bird_type) %>%
   summarize(bird_count = mean(bird_count), .groups = "drop")
 
+#The df for the geom_segment of the graph.  Thought it was "neater" to pull it out.
 parsed_wider <- bird_parsed %>%
       pivot_wider(names_from = urban_rural,
                   values_from = bird_count)
 
-bird_parsed %>%
-      pivot_wider(names_from = urban_rural,
-                  values_from = bird_count) %>%
-  view()
 
+#The graph WITHOUT the geom_segment, because I'm unfamiliar with geom_segment.
 bird_parsed %>%
   ggplot(aes(bird_count, bird_type, color = urban_rural)) +
   geom_point(size = 3) +
@@ -84,6 +89,7 @@ bird_parsed %>%
        y = "",
        color = "")
 
+#Final graph.
 bird_parsed %>%
   ggplot(aes(bird_count, bird_type)) +
   geom_point(aes(color = urban_rural), size = 3) +
@@ -94,10 +100,58 @@ bird_parsed %>%
   labs(x = "Probability of seeing a bird",
        y = "",
        color = "") 
-
-
-
-
-  
 ```
+
+Let's create a dataframe that we're going to use for modeling.
+```{r}
+bird_df <- bird_baths %>%
+  filter(!is.na(urban_rural),
+         bird_type %in% top_birds) %>%
+  mutate(bird_count = if_else(bird_count > 0, "bird", "no bird")) %>%
+  mutate_if(is.character, as.factor)
+
+bird_df %>%
+  view()
+```
+
+Always consider how you are spending your data budget!!
+```{r}
+#Random number generator.
+set.seed(123)
+
+#splitting divides our data into training(analysis)/testing/total. 3/4 goes into training, 1/4 into testing.
+bird_split <- initial_split(bird_df, strata = bird_count)
+
+#Now we will pull out the "training/analysis" part of our split.
+bird_train <- training(bird_split)
+
+#Now we will pull out our testing data from our split.
+bird_test <- testing(bird_split)
+
+
+#Now we can create some re-sampling folds (10 fold cross-validation). This takes the training set and creates 10 simulated datasets, created by cross-validation.  We can use these to train and compare different models, without touching our testing data (precious resource in our data budget...)
+set.seed(234) 
+
+bird_folds <- vfold_cv(bird_train, strata = bird_count)
+bird_folds
+```
+
+Now we can build our actual model.
+```{r}
+#Just changed syntax... this is equivalent to glm, family =  binomial, logistic regression mode.
+glm_spec <- logistic_reg()
+
+#Feature engineering, using a recipe.
+#We will try and predict bird_count using urbanVSrural and the bird type, using our training data.
+#We will also change everything that is nominal (urban/rural, bird type) into dummy indicator variables --> a #numeric variable representing a character variable.
+
+recipe_basic <- recipe(bird_count ~ urban_rural + bird_type, data = bird_train) %>%
+  step_dummy(all_nominal_predictors())
+
+#Let's group our recipe with our modeling specification. This will connect them together.
+
+wf <- workflow(glm_spec, recipe_basic)
+
+```
+
 
